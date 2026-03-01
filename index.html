@@ -1058,23 +1058,7 @@ const storage = {
   }
 };
 
-const DIFF_RATINGS = {
-  // Connections Companion ratings from community data (puzzle# -> rating)
-  // Sourced from publicly available community compilations (0-5 scale)
-  // A selection of known ratings — rest will show as N/A
-  1:2.0,2:1.8,3:2.5,4:3.1,5:2.8,6:3.5,7:1.5,8:2.2,9:2.9,10:3.4,
-  11:2.1,12:3.7,13:1.9,14:2.6,15:3.0,16:2.4,17:3.2,18:1.7,19:2.8,20:3.5,
-  21:2.3,22:3.8,23:1.6,24:2.7,25:3.1,26:2.0,27:3.6,28:2.2,29:3.3,30:1.8,
-  31:2.9,32:3.7,33:2.1,34:3.4,35:2.5,36:1.9,37:3.0,38:2.6,39:3.8,40:2.3,
-  41:3.5,42:2.0,43:3.2,44:1.7,45:2.8,46:3.6,47:2.4,48:3.1,49:2.7,50:3.9,
-  100:3.2,150:2.8,200:3.5,250:2.1,300:3.7,350:2.5,400:3.1,450:2.9,
-  500:3.3,550:2.6,600:3.8,650:2.4,700:3.0,750:2.7,800:3.5,850:2.2,
-  900:3.1,950:2.8,960:3.4,961:2.1,962:3.7,963:2.5,964:3.0,965:2.8,
-  966:3.5,967:2.2,968:3.9,969:2.6,970:3.3,971:2.0,972:3.6,973:2.4,
-  974:3.1,975:2.8,976:3.5,977:2.1,978:3.7,979:2.5,980:3.0,981:2.9,
-  982:3.5,983:2.3,984:3.8,985:2.6,986:3.2,987:2.0,988:3.5,989:2.8,
-  990:3.1,991:2.3,992:2.0
-};
+
 
 const COLOR_MAP = ['y', 'g', 'b', 'p'];
 const COLOR_EMOJI = ['🟨', '🟩', '🟦', '🟪'];
@@ -1209,7 +1193,7 @@ function buildPuzzleList() {
     left.className = 'puzzle-item-left';
     const numSpan = document.createElement('span');
     numSpan.className = 'puzzle-num';
-    numSpan.textContent = '#' + p.id;
+    numSpan.textContent = '#' + (getPuzzleNumber(p.date) ?? (p.id + 1));
     const dateSpan2 = document.createElement('span');
     dateSpan2.className = 'puzzle-date';
     dateSpan2.textContent = formatDate(p.date);
@@ -1247,35 +1231,16 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function getDiffRating(id) {
-  if (DIFF_RATINGS[id] != null) return DIFF_RATINGS[id];
-  // Interpolate loosely based on position
-  const keys = Object.keys(DIFF_RATINGS).map(Number).sort((a,b) => a-b);
-  for (let i = 0; i < keys.length - 1; i++) {
-    if (id > keys[i] && id < keys[i+1]) {
-      const t = (id - keys[i]) / (keys[i+1] - keys[i]);
-      return +(DIFF_RATINGS[keys[i]] + t * (DIFF_RATINGS[keys[i+1]] - DIFF_RATINGS[keys[i]])).toFixed(1);
-    }
-  }
-  return null;
+// Compute the correct puzzle number based on calendar days since the first puzzle (2023-06-12)
+const FIRST_PUZZLE_DATE = new Date('2023-06-12T00:00:00');
+function getPuzzleNumber(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + 'T00:00:00');
+  const days = Math.round((d - FIRST_PUZZLE_DATE) / (1000 * 60 * 60 * 24));
+  return days + 1;
 }
 
-function getDiffClass(r) {
-  if (r < 2) return 'diff-1';
-  if (r < 2.8) return 'diff-2';
-  if (r < 3.5) return 'diff-3';
-  if (r < 4.2) return 'diff-4';
-  return 'diff-5';
-}
 
-function getDiffLabel(r) {
-  if (!r) return 'Unknown';
-  if (r < 2) return 'Easy';
-  if (r < 2.8) return 'Moderate';
-  if (r < 3.5) return 'Challenging';
-  if (r < 4.2) return 'Hard';
-  return 'Brutal';
-}
 
 // ============================================================
 // GAME LOGIC
@@ -1292,6 +1257,7 @@ function selectPuzzle(p) {
   state.gameOver = false;
   state.hintsShown = [false, false, false, false];
   state.timerSeconds = 0;
+  state.wordOrder = [];
 
   // Only restore genuinely in-progress games; completed games always start fresh
   const saved = getSavedGame(p.id);
@@ -1307,24 +1273,18 @@ function selectPuzzle(p) {
     el.classList.toggle('active', Number(el.dataset.id) === p.id);
   });
 
-  // Update sidebar difficulty spoiler for this puzzle
+  // Update sidebar difficulty link for this puzzle
   const diffContainer = document.getElementById('sidebar-difficulty');
   if (diffContainer) {
     diffContainer.innerHTML = '';
-    const rating = getDiffRating(p.id);
-    if (rating) {
-      const spoiler = document.createElement('button');
-      spoiler.className = 'item-spoiler-btn';
-      spoiler.textContent = 'Show difficulty for #' + p.id;
-      spoiler.addEventListener('click', () => {
-        diffContainer.innerHTML = '';
-        const db = document.createElement('span');
-        db.className = 'diff-badge ' + getDiffClass(rating);
-        db.textContent = getDiffLabel(rating) + ' · ' + rating.toFixed(1);
-        diffContainer.appendChild(db);
-      });
-      diffContainer.appendChild(spoiler);
-    }
+    const link = document.createElement('a');
+    link.className = 'item-spoiler-btn';
+    link.textContent = 'View difficulty on Companion ↗';
+    link.href = 'https://www.nytimes.com/spotlight/connections-companion';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.style.cssText = 'display:inline-block;text-decoration:none;';
+    diffContainer.appendChild(link);
   }
 
   document.getElementById('sidebar').classList.remove('open');
@@ -1371,7 +1331,7 @@ function renderGame() {
   const gameArea = document.getElementById('game-area');
 
   // Update header
-  document.getElementById('puzzle-title').textContent = 'Puzzle #' + p.id;
+  document.getElementById('puzzle-title').textContent = 'Puzzle #' + (getPuzzleNumber(p.date) ?? (p.id + 1));
 
   const metaEl = document.getElementById('puzzle-meta');
   metaEl.innerHTML = '';
@@ -1383,7 +1343,20 @@ function renderGame() {
   // Enable hint button
   document.getElementById('hint-btn').disabled = false;
 
-  const remainingWords = getRemainingWords();
+  let remainingWords = getRemainingWords();
+  // Preserve the current board order if it exists; only shuffle on the very first render
+  if (state.wordOrder && state.wordOrder.length > 0) {
+    // Use saved order, filtering out any words that have since been solved
+    const remaining = new Set(remainingWords);
+    remainingWords = state.wordOrder.filter(w => remaining.has(w));
+  } else {
+    // Initial load: shuffle so the puzzle isn't trivially ordered
+    for (let i = remainingWords.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [remainingWords[i], remainingWords[j]] = [remainingWords[j], remainingWords[i]];
+    }
+    state.wordOrder = [...remainingWords];
+  }
 
   gameArea.innerHTML = '';
 
@@ -1462,37 +1435,6 @@ function appendSolvedGroup(g) {
   mistakesRow.insertAdjacentElement('afterend', el);
 }
 
-function getDiffColor(r) {
-  if (r < 2) return 'var(--green)';
-  if (r < 2.8) return 'var(--yellow)';
-  if (r < 3.5) return '#fb923c';
-  return '#f87171';
-}
-
-function revealDifficulty(btn, rating) {
-  const wrap = document.createElement('span');
-  wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;';
-
-  const label = document.createElement('span');
-  label.className = 'meta-tag';
-  label.textContent = getDiffLabel(rating);
-
-  const barWrap = document.createElement('div');
-  barWrap.className = 'diff-bar';
-  const fill = document.createElement('div');
-  fill.className = 'diff-fill';
-  fill.style.cssText = 'width:' + ((rating/5)*100) + '%;background:' + getDiffColor(rating);
-  barWrap.appendChild(fill);
-
-  const num = document.createElement('span');
-  num.style.cssText = "font-family:'DM Mono',monospace;font-size:11px;color:var(--text-muted)";
-  num.textContent = rating.toFixed(1) + '/5';
-
-  wrap.appendChild(label);
-  wrap.appendChild(barWrap);
-  wrap.appendChild(num);
-  btn.replaceWith(wrap);
-}
 
 function getRemainingWords() {
   const p = state.currentPuzzle;
@@ -1517,6 +1459,8 @@ function shuffleRemaining() {
     if (state.selectedWords.includes(words[i])) tile.classList.add('selected');
     else tile.classList.remove('selected');
   });
+  // Persist new order so hint re-renders don't reset it
+  state.wordOrder = [...words];
 }
 
 function toggleWord(word) {
@@ -1596,7 +1540,12 @@ function submitGuess() {
       if (oldBoard) oldBoard.remove();
       if (oldActions) oldActions.remove();
       const gameArea = document.getElementById('game-area');
-      const remainingWords = getRemainingWords();
+      // Preserve the current visual order of tiles rather than reverting to category order
+      const currentTiles = oldBoard ? [...oldBoard.querySelectorAll('.word-tile')] : [];
+      const solvedWords = group.words.map(w => w.trim().toUpperCase());
+      const remainingWords = currentTiles
+        .map(t => t.dataset.word)
+        .filter(w => !solvedWords.includes(w.trim().toUpperCase()));
       const board = document.createElement('div');
       board.id = 'board';
       remainingWords.forEach(word => {
@@ -1861,7 +1810,7 @@ function copyShare() {
       rows.push(row);
     }
   });
-  const text = `Connections #${p.id}\n${rows.join('\n')}`;
+  const text = `Connections #${getPuzzleNumber(p.date) ?? (p.id + 1)}\n${rows.join('\n')}`;
   navigator.clipboard?.writeText(text);
   showToast('Copied to clipboard!');
 }
@@ -1930,7 +1879,7 @@ function showStats() {
   allIds.slice(0, 30).reverse().forEach(id => {
     const dot = document.createElement('div');
     dot.className = 'streak-dot' + (solved[id] ? (solved[id].won ? ' solved' : ' failed') : '');
-    dot.title = `#${id}`;
+    dot.title = `#${getPuzzleNumber(state.allPuzzles.find(p => p.id == id)?.date) ?? (Number(id) + 1)}`;
     sv.appendChild(dot);
   });
 
@@ -1941,12 +1890,11 @@ function showStats() {
     const puzzle = state.allPuzzles.find(p => p.id == id);
     const item = document.createElement('div');
     item.className = 'history-item';
-    const rating = getDiffRating(Number(id));
     const hLeft = document.createElement('div');
     hLeft.className = 'history-left';
     const hNum = document.createElement('span');
     hNum.className = 'history-num';
-    hNum.textContent = '#' + id;
+    hNum.textContent = '#' + (puzzle ? (getPuzzleNumber(puzzle.date) ?? (Number(id) + 1)) : (Number(id) + 1));
     const hDate = document.createElement('span');
     hDate.className = 'history-date';
     hDate.textContent = puzzle ? formatDate(puzzle.date) : '';
@@ -1955,12 +1903,6 @@ function showStats() {
 
     const hRight = document.createElement('div');
     hRight.className = 'history-right';
-    if (rating) {
-      const db2 = document.createElement('span');
-      db2.className = 'diff-badge ' + getDiffClass(rating);
-      db2.textContent = rating.toFixed(1);
-      hRight.appendChild(db2);
-    }
     const wonSpan = document.createElement('span');
     wonSpan.style.fontSize = '18px';
     wonSpan.textContent = v.won ? '✅' : '❌';
